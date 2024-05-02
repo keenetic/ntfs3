@@ -1,0 +1,13 @@
+*.[oa]
+*.cmd
+*.mod.c
+*.ko
+Module.symvers
+.built
+.built_check
+.configured_*
+.dep_files
+.prepared_*
+.tmp_versions/
+ipkg-*/
+modules.order

@@ -47,8 +47,8 @@ static struct inode *ntfs_read_mft(struct inode *inode,
 
 	inode->i_op = NULL;
 	/* Setup 'uid' and 'gid' */
-	inode->i_uid = sbi->options->fs_uid;
-	inode->i_gid = sbi->options->fs_gid;
+	inode->i_uid = sbi->options.fs_uid;
+	inode->i_gid = sbi->options.fs_gid;
 
 	err = mi_init(&ni->mi, sbi, ino);
 	if (err)
@@ -242,7 +242,7 @@ next_attr:
 			inode_set_bytes(inode, rsize);
 		}
 
-		mode = S_IFREG | (0777 & sbi->options->fs_fmask_inv);
+		mode = S_IFREG | (0777 & sbi->options.fs_fmask_inv);
 
 		if (!attr->non_res) {
 			ni->ni_flags |= NI_FLAG_RESIDENT;
@@ -285,7 +285,7 @@ next_attr:
 			goto out;
 
 		mode = sb->s_root
-			       ? (S_IFDIR | (0777 & sbi->options->fs_dmask_inv))
+			       ? (S_IFDIR | (0777 & sbi->options.fs_dmask_inv))
 			       : (S_IFDIR | 0777);
 		goto next_attr;
 
@@ -460,7 +460,7 @@ end_enum:
 		goto out;
 	}
 
-	if ((sbi->options->sys_immutable &&
+	if ((sbi->options.sys_immutable &&
 	     (std5->fa & FILE_ATTRIBUTE_SYSTEM)) &&
 	    !S_ISFIFO(mode) && !S_ISSOCK(mode) && !S_ISLNK(mode)) {
 		inode->i_flags |= S_IMMUTABLE;
@@ -731,6 +731,7 @@ static int ntfs_readpage(struct file *file, struct page *page)
 	return mpage_readpage(page, ntfs_get_block);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
 static void ntfs_readahead(struct readahead_control *rac)
 {
 	struct address_space *mapping = rac->mapping;
@@ -760,6 +761,22 @@ static void ntfs_readahead(struct readahead_control *rac)
 
 	mpage_readahead(rac, ntfs_get_block);
 }
+#else
+static int ntfs_readpages(struct file *file, struct address_space *mapping,
+		struct list_head *pages, unsigned int nr_pages)
+{
+	struct inode *inode = mapping->host;
+	struct ntfs_inode *ni = ntfs_i(inode);
+
+	if (is_resident(ni))
+		return 0;
+
+	if (is_compressed(ni))
+		return 0;
+
+	return mpage_readpages(mapping, pages, nr_pages, ntfs_get_block);
+}
+#endif
 
 static int ntfs_get_block_direct_IO_R(struct inode *inode, sector_t iblock,
 				      struct buffer_head *bh_result, int create)
@@ -1194,7 +1211,11 @@ out:
 	return ERR_PTR(err);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 struct inode *ntfs_create_inode(struct user_namespace *mnt_userns,
+#else
+struct inode *ntfs_create_inode(
+#endif
 				struct inode *dir, struct dentry *dentry,
 				const struct cpu_str *uni, umode_t mode,
 				dev_t dev, const char *symname, u32 size,
@@ -1271,7 +1292,7 @@ struct inode *ntfs_create_inode(struct user_namespace *mnt_userns,
 		 *	}
 		 */
 	} else if (S_ISREG(mode)) {
-		if (sbi->options->sparse) {
+		if (sbi->options.sparse) {
 			/* Sparsed regular file, cause option 'sparse'. */
 			fa = FILE_ATTRIBUTE_SPARSE_FILE |
 			     FILE_ATTRIBUTE_ARCHIVE;
@@ -1311,7 +1332,11 @@ struct inode *ntfs_create_inode(struct user_namespace *mnt_userns,
 		goto out3;
 	}
 	inode = &ni->vfs_inode;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	inode_init_owner(mnt_userns, inode, dir, mode);
+#else
+	inode_init_owner(inode, dir, mode);
+#endif
 	mode = inode->i_mode;
 
 	inode->i_atime = inode->i_mtime = inode->i_ctime = ni->i_crtime =
@@ -1610,7 +1635,11 @@ struct inode *ntfs_create_inode(struct user_namespace *mnt_userns,
 
 #ifdef CONFIG_NTFS3_FS_POSIX_ACL
 	if (!S_ISLNK(mode) && (sb->s_flags & SB_POSIXACL)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 		err = ntfs_init_acl(mnt_userns, inode, dir);
+#else
+		err = ntfs_init_acl(inode, dir);
+#endif
 		if (err)
 			goto out7;
 	} else
@@ -1658,7 +1687,12 @@ out4:
 	clear_rec_inuse(rec);
 	clear_nlink(inode);
 	ni->mi.dirty = false;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	discard_new_inode(inode);
+#else
+	unlock_new_inode(inode);
+	iput(inode);
+#endif
 out3:
 	ntfs_mark_rec_free(sbi, ino);
 
@@ -1970,7 +2004,11 @@ const struct inode_operations ntfs_link_inode_operations = {
 
 const struct address_space_operations ntfs_aops = {
 	.readpage	= ntfs_readpage,
-	.readahead	= ntfs_readahead,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+	.readahead = ntfs_readahead,
+#else
+	.readpages = ntfs_readpages,
+#endif
 	.writepage	= ntfs_writepage,
 	.writepages	= ntfs_writepages,
 	.write_begin	= ntfs_write_begin,
@@ -1982,6 +2020,10 @@ const struct address_space_operations ntfs_aops = {
 
 const struct address_space_operations ntfs_aops_cmpr = {
 	.readpage	= ntfs_readpage,
-	.readahead	= ntfs_readahead,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
+	.readahead = ntfs_readahead,
+#else
+	.readpages = ntfs_readpages,
+#endif
 };
 // clang-format on

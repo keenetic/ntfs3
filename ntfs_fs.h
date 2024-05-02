@@ -93,6 +93,8 @@ struct ntfs_mount_options {
 	u16 fs_fmask_inv;
 	u16 fs_dmask_inv;
 
+	unsigned uid : 1;
+	unsigned gid : 1;
 	unsigned fmask : 1; /* fmask was set. */
 	unsigned dmask : 1; /*dmask was set. */
 	unsigned sys_immutable : 1; /* Immutable system files. */
@@ -308,7 +310,7 @@ struct ntfs_sb_info {
 #endif
 	} compress;
 
-	struct ntfs_mount_options *options;
+	struct ntfs_mount_options options;
 	struct ratelimit_state msg_ratelimit;
 };
 
@@ -348,7 +350,7 @@ struct ntfs_inode {
 	 * Usually i_valid <= inode->i_size.
 	 */
 	u64 i_valid;
-	struct timespec64 i_crtime;
+	struct timespec i_crtime;
 
 	struct mutex ni_lock;
 
@@ -488,11 +490,23 @@ bool dir_is_empty(struct inode *dir);
 extern const struct file_operations ntfs_dir_operations;
 
 /* Globals from file.c */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 int ntfs_getattr(struct user_namespace *mnt_userns, const struct path *path,
 		 struct kstat *stat, u32 request_mask, u32 flags);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+int ntfs_getattr(const struct path *path, struct kstat *stat,
+		 u32 request_mask, u32 flags);
+#else
+int ntfs_getattr(struct vfsmount *mnt, struct dentry *dentry,
+		 struct kstat *stat);
+#endif
 void ntfs_sparse_cluster(struct inode *inode, struct page *page0, CLST vcn,
 			 CLST len);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 int ntfs3_setattr(struct user_namespace *mnt_userns, struct dentry *dentry,
+#else
+int ntfs3_setattr(struct dentry *dentry,
+#endif
 		  struct iattr *attr);
 int ntfs_file_open(struct inode *inode, struct file *file);
 int ntfs_fiemap(struct inode *inode, struct fiemap_extent_info *fieinfo,
@@ -699,7 +713,11 @@ int ntfs_sync_inode(struct inode *inode);
 int ntfs_flush_inodes(struct super_block *sb, struct inode *i1,
 		      struct inode *i2);
 int inode_write_data(struct inode *inode, const void *data, size_t bytes);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 struct inode *ntfs_create_inode(struct user_namespace *mnt_userns,
+#else
+struct inode *ntfs_create_inode(
+#endif
 				struct inode *dir, struct dentry *dentry,
 				const struct cpu_str *uni, umode_t mode,
 				dev_t dev, const char *symname, u32 size,
@@ -840,18 +858,35 @@ int ntfs_cmp_names_cpu(const struct cpu_str *uni1, const struct le_str *uni2,
 
 /* globals from xattr.c */
 #ifdef CONFIG_NTFS3_FS_POSIX_ACL
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
 struct posix_acl *ntfs_get_acl(struct inode *inode, int type, bool rcu);
+#else
+struct posix_acl *ntfs_get_acl(struct inode *inode, int type);
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 int ntfs_set_acl(struct user_namespace *mnt_userns, struct inode *inode,
+#else
+int ntfs_set_acl(struct inode *inode,
+#endif
 		 struct posix_acl *acl, int type);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 int ntfs_init_acl(struct user_namespace *mnt_userns, struct inode *inode,
+#else
+int ntfs_init_acl(struct inode *inode,
+#endif
 		  struct inode *dir);
 #else
 #define ntfs_get_acl NULL
 #define ntfs_set_acl NULL
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 int ntfs_acl_chmod(struct user_namespace *mnt_userns, struct inode *inode);
 int ntfs_permission(struct user_namespace *mnt_userns, struct inode *inode,
+#else
+int ntfs_acl_chmod(struct inode *inode);
+int ntfs_permission(struct inode *inode,
+#endif
 		    int mask);
 ssize_t ntfs_listxattr(struct dentry *dentry, char *buffer, size_t size);
 extern const struct xattr_handler *ntfs_xattr_handlers[];
@@ -961,7 +996,7 @@ static inline size_t bitmap_size(size_t bits)
 /*
  * kernel2nt - Converts in-memory kernel timestamp into nt time.
  */
-static inline __le64 kernel2nt(const struct timespec64 *ts)
+static inline __le64 kernel2nt(const struct timespec *ts)
 {
 	// 10^7 units of 100 nanoseconds one second
 	return cpu_to_le64(_100ns2seconds *
@@ -972,7 +1007,7 @@ static inline __le64 kernel2nt(const struct timespec64 *ts)
 /*
  * nt2kernel - Converts on-disk nt time into kernel timestamp.
  */
-static inline void nt2kernel(const __le64 tm, struct timespec64 *ts)
+static inline void nt2kernel(const __le64 tm, struct timespec *ts)
 {
 	u64 t = le64_to_cpu(tm) - _100ns2seconds * SecondsToStartOf1970;
 

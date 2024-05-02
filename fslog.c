@@ -10,6 +10,8 @@
 #include <linux/random.h>
 #include <linux/slab.h>
 
+#include <linux/version.h>
+
 #include "debug.h"
 #include "ntfs.h"
 #include "ntfs_fs.h"

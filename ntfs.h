@@ -17,6 +17,9 @@
 #include <linux/string.h>
 #include <linux/types.h>
 
+#include <linux/version.h>
+#include "compat.h"
+
 #include "debug.h"
 
 /* TODO: Check 4K MFT record and 512 bytes cluster. */

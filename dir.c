@@ -10,6 +10,12 @@
 #include <linux/fs.h>
 #include <linux/nls.h>
 
+#include <linux/version.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
+#include <linux/iversion.h>
+#endif
+
 #include "debug.h"
 #include "ntfs.h"
 #include "ntfs_fs.h"
@@ -20,7 +26,7 @@ int ntfs_utf16_to_nls(struct ntfs_sb_info *sbi, const __le16 *name, u32 len,
 {
 	int ret, warn;
 	u8 *op;
-	struct nls_table *nls = sbi->options->nls;
+	struct nls_table *nls = sbi->options.nls;
 
 	static_assert(sizeof(wchar_t) == sizeof(__le16));
 
@@ -180,7 +186,7 @@ int ntfs_nls_to_utf16(struct ntfs_sb_info *sbi, const u8 *name, u32 name_len,
 {
 	int ret, slen;
 	const u8 *end;
-	struct nls_table *nls = sbi->options->nls;
+	struct nls_table *nls = sbi->options.nls;
 	u16 *uname = uni->name;
 
 	static_assert(sizeof(wchar_t) == sizeof(u16));
@@ -295,10 +301,10 @@ static inline int ntfs_filldir(struct ntfs_sb_info *sbi, struct ntfs_inode *ni,
 		return 0;
 
 	/* Skip meta files. Unless option to show metafiles is set. */
-	if (!sbi->options->showmeta && ntfs_is_meta_file(sbi, ino))
+	if (!sbi->options.showmeta && ntfs_is_meta_file(sbi, ino))
 		return 0;
 
-	if (sbi->options->nohidden && (fname->dup.fa & FILE_ATTRIBUTE_HIDDEN))
+	if (sbi->options.nohidden && (fname->dup.fa & FILE_ATTRIBUTE_HIDDEN))
 		return 0;
 
 	name_len = ntfs_utf16_to_nls(sbi, fname->name, fname->name_len, name,
