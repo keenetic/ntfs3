@@ -231,6 +231,7 @@ enum Opt {
 	Opt_nls,
 	Opt_prealloc,
 	Opt_noacsrules,
+	Opt_nocase,
 	Opt_err,
 };
 
@@ -250,6 +251,7 @@ static const match_table_t ntfs_tokens = {
 	{ Opt_nls, "nls=%s" },
 	{ Opt_prealloc, "prealloc" },
 	{ Opt_noacsrules, "no_acs_rules" },
+	{ Opt_nocase, "nocase" },
 	{ Opt_err, NULL },
 };
 
@@ -347,6 +349,9 @@ static noinline int ntfs_parse_options(struct super_block *sb, char *options,
 			break;
 		case Opt_noacsrules:
 			opts->noacsrules = 1;
+			break;
+		case Opt_nocase:
+			opts->nocase = 1;
 			break;
 		default:
 			if (!silent)
@@ -592,6 +597,8 @@ static int ntfs_show_options(struct seq_file *m, struct dentry *root)
 		seq_puts(m, ",prealloc");
 	if (sb->s_flags & SB_POSIXACL)
 		seq_puts(m, ",acl");
+	if (opts->nocase)
+		seq_puts(m, ",nocase");
 
 	return 0;
 }
@@ -963,6 +970,7 @@ static int ntfs_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_export_op = &ntfs_export_ops;
 	sb->s_time_gran = NTFS_TIME_GRAN; // 100 nsec
 	sb->s_xattr = ntfs_xattr_handlers;
+	sb->s_d_op = sbi->options.nocase ? &ntfs_dentry_ops : NULL;
 
 	err = ntfs_parse_options(sb, data, silent, &sbi->options);
 	if (err)
